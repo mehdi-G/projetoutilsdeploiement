@@ -1,0 +1,22 @@
+docker build -t image_mom .     // bach kat creé image ly biti
+
+docker run -d --name dind-container --privileged image_mom   // kat lancé dik container b image image_mom 
+
+
+docker exec -it dind-container /bin/sh  // accéder a l'interieur du contenaire mom 
+
+sh /start-containers.sh     // executer le scripte 
+
+
+# Étape 1: Arrêter tous les conteneurs 
+	docker stop $(docker ps -q)
+
+# Étape 2: Supprimer tous les conteneurs
+	docker rm $(docker ps -a -q)
+
+# Étape 3: Supprimer l'image 
+	docker rmi image_mom
+
+docker ps -a             // affiché tous les containers qui sont arréter
+
+
