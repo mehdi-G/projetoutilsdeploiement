@@ -16,6 +16,10 @@ sh /start-containers.sh     // executer le scripte
 
 # Étape 3: Supprimer l'image 
 	docker rmi image_mom
+ 
+
+apk add --no-cache python3 py3-pip  // installer python3 et pip3
+
 
 docker ps -a             // affiché tous les containers qui sont arréter
 
