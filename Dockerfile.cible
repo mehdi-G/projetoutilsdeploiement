@@ -1,0 +1,11 @@
+# Utiliser une image de base légère, par exemple Alpine
+FROM alpine:latest
+
+# Installer les dépendances nécessaires (vous pouvez ajouter d'autres outils si nécessaire)
+RUN apk add --no-cache curl
+
+# Exposer un port (par exemple, 80) pour écouter les requêtes
+EXPOSE 80
+
+# Créer un simple serveur HTTP
+CMD ["httpd", "-f", "-h", "/var/www/"]
