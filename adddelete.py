@@ -5,6 +5,9 @@ def list_containers():
 
 def add_container(container_name, image_name):
     os.system(f"docker run -d --name {container_name} {image_name}")
+    
+def access_container():
+    os.system(f"docker exec -it dind-container /bin/sh")
 
 def stop_container(container_name):
     os.system(f"docker stop {container_name}")
@@ -14,7 +17,8 @@ while True:
     print("\n1. List containers")
     print("2. Add a container")
     print("3. Remove a container")
-    print("4. Exit")
+    print("4. Access container")
+    print("5. Exit")
     
     choice = input("Enter your choice: ")
 
@@ -28,6 +32,8 @@ while True:
         container_name = input("Enter container name to stop and remove: ")
         stop_container(container_name)
     elif choice == '4':
+        access_container()
+    elif choice == '5':
         break
     else:
         print("Invalid choice, please try again.")
