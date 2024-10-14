@@ -18,15 +18,18 @@ read -p "Entrez le nom du conteneur (web1, web2, web3) : " chosen_container
 # Vérifier si le conteneur existe
 if [ "$(docker ps -q -f name=$chosen_container)" ]; then
     # Installer Ansible dans le conteneur choisi
-    docker exec $chosen_container sh -c "apk add --no-cache ansible openssh sshpass"
+    echo "Installation d'Ansible..."
+    output=$(docker exec $chosen_container sh -c "apk add --no-cache ansible openssh sshpass" 2>&1)
+    echo "$output"
 
     # Vérifier si Ansible est installé
     ansible_installed=$(docker exec $chosen_container ansible --version 2>&1)
     
-    if [[ $ansible_installed == *"ansible"* ]]; then
+    if [ "$(echo $ansible_installed | grep 'ansible')" ]; then
         echo "Ansible a été installé avec succès dans le conteneur $chosen_container !"
     else
         echo "Erreur lors de l'installation d'Ansible dans le conteneur $chosen_container."
+        echo "Détails : $ansible_installed"
         exit 1
     fi
 
@@ -54,7 +57,6 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
         echo "Ajout de $container avec IP: $ip_address dans /etc/hosts..."
         docker exec $chosen_container sh -c "echo '$ip_address $container' >> /etc/hosts"
     done
-
 
     echo "Clé SSH copiée sur les autres conteneurs."
 
