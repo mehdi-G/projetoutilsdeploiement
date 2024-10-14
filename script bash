@@ -1,11 +1,12 @@
 #!/bin/bash
 
-# Démarrer les conteneurs Nginx initiaux
-start_initial_containers() {
-    docker run -d --name web1 -p 8081:80 nginx
-    docker run -d --name web2 -p 8082:80 nginx
-    docker run -d --name web3 -p 8083:80 nginx
-    echo "3 conteneurs sont démarrés avec succès !"
-}
+# Conteneur 1: Serveur Nginx
+docker run -d --name web1 nginx
 
-start_initial_containers
+# Conteneur 2: Serveur Nginx
+docker run -d --name web2 nginx
+
+# Conteneur 3: Serveur Nginx
+docker run -d --name web3 nginx
+
+echo "3 conteneurs sont démarrés avec succès !"
