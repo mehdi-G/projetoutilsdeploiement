@@ -1,15 +1,14 @@
 #!/bin/bash
 
 # Créer un réseau Docker si ce n'est pas déjà fait
+echo "Création du réseau Docker..."
 docker network create my_network || true
 
 # Lancer les conteneurs web1, web2, et web3 dans le même réseau
+echo "Lancement des conteneurs web1, web2, et web3..."
 docker run -d --name web1 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
 docker run -d --name web2 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
 docker run -d --name web3 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
-
-echo "Les conteneurs suivants ont été créés :"
-docker ps --format "table {{.Names}}\t{{.Status}}"
 
 # Demander à l'utilisateur sur quel conteneur installer Ansible
 echo "Choisissez un conteneur pour installer Ansible :"
@@ -17,9 +16,8 @@ read -p "Entrez le nom du conteneur (web1, web2, web3) : " chosen_container
 
 # Vérifier si le conteneur existe
 if [ "$(docker ps -q -f name=$chosen_container)" ]; then
-    # Installer Ansible dans le conteneur choisi
-    echo "Installation d'Ansible..."
-    docker exec $chosen_container sh -c "apk add --no-cache ansible openssh sshpass"
+    echo "Installation d'Ansible dans le conteneur $chosen_container..."
+    docker exec $chosen_container sh -c "apk add --no-cache ansible openssh sshpass python3"
 
     # Vérifier si Ansible est installé
     ansible_installed=$(docker exec $chosen_container ansible --version 2>&1)
@@ -33,11 +31,12 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
     fi
 
     # Copier le playbook.yml dans le conteneur choisi
-    echo "Copie de playbook.yml dans le conteneur $chosen_container..."
-    docker cp playbook.yml $chosen_container:/playbook.yml
+    echo "Copie de send_requests.yml dans le conteneur $chosen_container..."
+    docker cp send_requests.yml $chosen_container:/send_requests.yml
 
     # Installer la clé SSH dans le conteneur choisi
-    docker exec $chosen_container sh -c "ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa"
+    echo "Génération de la clé SSH dans le conteneur $chosen_container..."
+    docker exec $chosen_container sh -c "mkdir -p /root/.ssh && ssh-keygen -t rsa -N '' -f /root/.ssh/id_rsa"
 
     # Créer le fichier inventory.ini
     echo "Création du fichier inventory.ini dans le conteneur..."
@@ -48,7 +47,7 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
         if [ "$container" != "$chosen_container" ]; then
             ip_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container)
             echo "Ajout de $container avec IP: $ip_address dans inventory.ini..."
-            docker exec $chosen_container sh -c "echo '$container ansible_host=$ip_address' >> /root/inventory.ini"
+            docker exec $chosen_container sh -c "echo '$container ansible_host=$ip_address ansible_python_interpreter=/usr/bin/python3' >> /root/inventory.ini"
         fi
     done
 
@@ -56,15 +55,23 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
 
     # Installer et démarrer SSH sur tous les conteneurs
     for container in web1 web2 web3; do
-        echo "Installation de SSH sur $container..."
-        docker exec $container sh -c "apk add --no-cache openssh"
-        docker exec $container sh -c "/usr/sbin/sshd"
+        echo "Installation de SSH et Python sur $container..."
+        docker exec $container sh -c "apk add --no-cache openssh python3 && ssh-keygen -A && /usr/sbin/sshd"
+        
+        # Vérifier si SSH est en cours d'exécution
+        ssh_running=$(docker exec $container ps aux | grep sshd)
+        if [ -n "$ssh_running" ]; then
+            echo "Le service SSH est en cours d'exécution sur $container."
+        else
+            echo "Erreur : le service SSH n'a pas démarré sur $container."
+        fi
     done
 
     # Copier la clé SSH publique dans les autres conteneurs
     for container in web2 web3; do
         echo "Copie de la clé SSH publique dans $container..."
         docker exec $chosen_container sh -c "cat /root/.ssh/id_rsa.pub" | docker exec -i $container sh -c "mkdir -p /root/.ssh && cat >> /root/.ssh/authorized_keys"
+        echo "Clé SSH copiée dans $container."
     done
 
     # Ajouter les adresses IP des conteneurs dans /etc/hosts
@@ -76,8 +83,7 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
 
     echo "Clé SSH copiée sur les autres conteneurs."
 
-    # --- AJOUTER LA PARTIE AVEC CIBLE-CONTAINER ---
-
+    # --- Partie pour envoyer des requêtes depuis Ansible ---
     # Demander l'adresse IP du conteneur cible-container
     echo "Veuillez entrer l'adresse IP du conteneur cible-container :"
     read -p "Entrez l'IP de cible-container : " cible_ip
@@ -86,25 +92,12 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
     echo "Combien de requêtes chaque conteneur doit-il envoyer à cible-container ?"
     read -p "Entrez le nombre de requêtes à envoyer : " nb_requetes
 
-    # Envoyer un message à cible-container depuis tous les conteneurs sauf celui choisi pour Ansible
-    for container in web1 web2 web3; do
-        if [ "$container" != "$chosen_container" ]; then
-            echo "Le conteneur $container va envoyer $nb_requetes requêtes à cible-container ($cible_ip)..."
-            docker exec $container sh -c "apk add --no-cache curl"
-            for i in $(seq 1 $nb_requetes); do
-                docker exec $container sh -c "curl -X POST -d 'Hello from $container - Requête $i' http://$cible_ip:8080"
-            done
-        fi
-    done
-
-    # --- FIN DES AJOUTS ---
-
-    # Vérifier si le playbook existe avant de l'exécuter
-    if docker exec $chosen_container [ -f /playbook.yml ]; then
-        # Lancer le playbook Ansible
-        docker exec $chosen_container sh -c "ansible-playbook -i /root/inventory.ini /playbook.yml"
+    # Exécuter le playbook Ansible pour envoyer les requêtes
+    if docker exec $chosen_container [ -f /send_requests.yml ]; then
+        echo "Exécution du playbook Ansible..."
+        docker exec $chosen_container sh -c "ansible-playbook -i /root/inventory.ini /send_requests.yml -e 'cible_ip=$cible_ip nb_requetes=$nb_requetes' -e 'ansible_ssh_common_args=\"-o StrictHostKeyChecking=no\"'"
     else
-        echo "ERROR! Le playbook: /playbook.yml est introuvable."
+        echo "ERROR! Le playbook: /send_requests.yml est introuvable."
     fi
 
 else
