@@ -8,8 +8,12 @@ RUN apk add --no-cache bash
 COPY start-containers.sh /start-containers.sh
 RUN chmod +x /start-containers.sh && ls -l /
 
-COPY  p.py /p.py
-RUN chmod +x /p.py && ls -l /
+COPY send_requests.yml /send_requests.yml
+RUN chmod +x /send_requests.yml 
+
+COPY a.py /a.py
+RUN chmod +x /a.py 
+
 
 # Exposer le port Docker (optionnel)
 EXPOSE 2375
