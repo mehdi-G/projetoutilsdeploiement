@@ -1,0 +1,14 @@
+---
+- name: Envoyer des requêtes à cible-container
+  hosts: webservers  # Ceci se réfère aux conteneurs dans l'inventaire
+  tasks:
+    - name: Installer curl sur les conteneurs
+      ansible.builtin.package:
+        name: curl
+        state: present
+
+    - name: Envoyer des requêtes à cible-container
+      ansible.builtin.shell: |
+        for i in $(seq 1 {{ nb_requetes }}); do
+            curl -X POST -d 'Hello from {{ inventory_hostname }} - Requête $i' http://{{ cible_ip }}:8080
+        done
