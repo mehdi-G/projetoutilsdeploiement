@@ -23,4 +23,5 @@ apk add --no-cache python3 py3-pip  // installer python3 et pip3
 
 docker ps -a             // affiché tous les containers qui sont arréter
 
+pk add --no-cache python3 py3-pip    # telecharger python3
 
