@@ -1,18 +1,29 @@
 #!/bin/bash
 
+# Stopper et supprimer tous les conteneurs existants
+echo "Arrêt et suppression de tous les conteneurs existants..."
+docker ps -aq | xargs -r docker stop
+docker ps -aq | xargs -r docker rm
+
+# Demander à l'utilisateur combien de conteneurs il souhaite créer
+echo "Combien de conteneurs souhaitez-vous créer ?"
+read -p "Entrez le nombre de conteneurs : " num_containers
+
 # Créer un réseau Docker si ce n'est pas déjà fait
 echo "Création du réseau Docker..."
 docker network create my_network || true
 
-# Lancer les conteneurs web1, web2, et web3 dans le même réseau
-echo "Lancement des conteneurs web1, web2, et web3..."
-docker run -d --name web1 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
-docker run -d --name web2 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
-docker run -d --name web3 --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
+# Lancer les conteneurs avec des noms dynamiques (web1, web2, ...)
+echo "Lancement des conteneurs..."
+for i in $(seq 1 $num_containers); do
+    container_name="web$i"
+    echo "Lancement du conteneur $container_name..."
+    docker run -d --name "$container_name" --network my_network alpine /bin/sh -c "while true; do sleep 30; done"
+done
 
 # Demander à l'utilisateur sur quel conteneur installer Ansible
 echo "Choisissez un conteneur pour installer Ansible :"
-read -p "Entrez le nom du conteneur (web1, web2, web3) : " chosen_container
+read -p "Entrez le nom du conteneur (par ex: web1, web2, etc.) : " chosen_container
 
 # Vérifier si le conteneur existe
 if [ "$(docker ps -q -f name=$chosen_container)" ]; then
@@ -41,44 +52,50 @@ if [ "$(docker ps -q -f name=$chosen_container)" ]; then
     # Créer le fichier inventory.ini
     echo "Création du fichier inventory.ini dans le conteneur..."
     docker exec $chosen_container sh -c "echo '[webservers]' > /root/inventory.ini"
-    
-    # Obtenir les adresses IP des conteneurs et les ajouter à inventory.ini
-    for container in web1 web2 web3; do
-        if [ "$container" != "$chosen_container" ]; then
-            ip_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container)
-            echo "Ajout de $container avec IP: $ip_address dans inventory.ini..."
-            docker exec $chosen_container sh -c "echo '$container ansible_host=$ip_address ansible_python_interpreter=/usr/bin/python3' >> /root/inventory.ini"
+
+    # Obtenir les adresses IP des autres conteneurs et les ajouter à inventory.ini
+    for i in $(seq 1 $num_containers); do
+        container_name="web$i"
+        if [ "$container_name" != "$chosen_container" ]; then
+            ip_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container_name)
+            echo "Ajout de $container_name avec IP: $ip_address dans inventory.ini..."
+            docker exec $chosen_container sh -c "echo '$container_name ansible_host=$ip_address ansible_python_interpreter=/usr/bin/python3' >> /root/inventory.ini"
         fi
     done
 
     echo "Fichier inventory.ini créé dans le conteneur $chosen_container."
 
     # Installer et démarrer SSH sur tous les conteneurs
-    for container in web1 web2 web3; do
-        echo "Installation de SSH et Python sur $container..."
-        docker exec $container sh -c "apk add --no-cache openssh python3 && ssh-keygen -A && /usr/sbin/sshd"
+    for i in $(seq 1 $num_containers); do
+        container_name="web$i"
+        echo "Installation de SSH et Python sur $container_name..."
+        docker exec $container_name sh -c "apk add --no-cache openssh python3 && ssh-keygen -A && /usr/sbin/sshd"
         
         # Vérifier si SSH est en cours d'exécution
-        ssh_running=$(docker exec $container ps aux | grep sshd)
+        ssh_running=$(docker exec $container_name ps aux | grep sshd)
         if [ -n "$ssh_running" ]; then
-            echo "Le service SSH est en cours d'exécution sur $container."
+            echo "Le service SSH est en cours d'exécution sur $container_name."
         else
-            echo "Erreur : le service SSH n'a pas démarré sur $container."
+            echo "Erreur : le service SSH n'a pas démarré sur $container_name."
         fi
     done
 
     # Copier la clé SSH publique dans les autres conteneurs
-    for container in web2 web3; do
-        echo "Copie de la clé SSH publique dans $container..."
-        docker exec $chosen_container sh -c "cat /root/.ssh/id_rsa.pub" | docker exec -i $container sh -c "mkdir -p /root/.ssh && cat >> /root/.ssh/authorized_keys"
-        echo "Clé SSH copiée dans $container."
+    for i in $(seq 1 $num_containers); do
+        container_name="web$i"
+        if [ "$container_name" != "$chosen_container" ]; then
+            echo "Copie de la clé SSH publique dans $container_name..."
+            docker exec $chosen_container sh -c "cat /root/.ssh/id_rsa.pub" | docker exec -i $container_name sh -c "mkdir -p /root/.ssh && cat >> /root/.ssh/authorized_keys"
+            echo "Clé SSH copiée dans $container_name."
+        fi
     done
 
     # Ajouter les adresses IP des conteneurs dans /etc/hosts
-    for container in web1 web2 web3; do
-        ip_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container)
-        echo "Ajout de $container avec IP: $ip_address dans /etc/hosts..."
-        docker exec $chosen_container sh -c "echo '$ip_address $container' >> /etc/hosts"
+    for i in $(seq 1 $num_containers); do
+        container_name="web$i"
+        ip_address=$(docker inspect -f '{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}' $container_name)
+        echo "Ajout de $container_name avec IP: $ip_address dans /etc/hosts..."
+        docker exec $chosen_container sh -c "echo '$ip_address $container_name' >> /etc/hosts"
     done
 
     echo "Clé SSH copiée sur les autres conteneurs."
